@@ -44,6 +44,7 @@ long_description = "Inkline is a lightweight, GPU-accelerated vector drawing app
 copyright = "Copyright (c) 2026 Inkline contributors"
 icon = [
     "assets/inkline.png",
+    "assets/inkline_1024@2x.png",
 ]
 deb_depends = [
     "libgtk-3-0",
