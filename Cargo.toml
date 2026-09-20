@@ -37,7 +37,7 @@ thiserror = "2.0"
 [package.metadata.bundle]
 name = "Inkline"
 identifier = "io.github.lichspace.inkline"
-category = "Graphics"
+category = "Graphics and Design"
 short_description = "GPU-accelerated vector drawing application"
 long_description = "Inkline is a lightweight, GPU-accelerated vector drawing application built with Rust, egui, and wgpu."
 copyright = "Copyright (c) 2026 Inkline contributors"
