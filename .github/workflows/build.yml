@@ -67,3 +67,38 @@ jobs:
           name: ${{ matrix.artifact }}
           path: ${{ matrix.binary }}
           if-no-files-found: error
+
+  release:
+    name: Publish latest release
+    needs: build
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'
+    permissions:
+      actions: read
+      contents: write
+
+    steps:
+      - name: Download build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Prepare release files
+        run: |
+          mkdir -p dist
+          cp artifacts/inkline-windows-x64/inkline.exe dist/inkline-windows-x64.exe
+          cp artifacts/inkline-macos/inkline dist/inkline-macos
+          cp artifacts/inkline-linux/inkline dist/inkline-linux
+
+      - name: Publish latest release
+        uses: ncipollo/release-action@v1
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          tag: latest
+          name: Latest build
+          body: Automated build from the latest main branch commit.
+          prerelease: true
+          makeLatest: true
+          allowUpdates: true
+          replacesArtifacts: true
+          artifacts: "dist/inkline-windows-x64.exe,dist/inkline-macos,dist/inkline-linux"

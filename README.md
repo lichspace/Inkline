@@ -14,6 +14,16 @@ editing, and clean SVG or raster export.
 - SVG, PNG, and JPEG export
 - Recent-project history
 
+## Downloads
+
+The latest binaries are published to the
+[latest release](https://github.com/lichspace/Inkline/releases/latest) after
+every successful `main` build.
+
+- [Windows x64](https://github.com/lichspace/Inkline/releases/download/latest/inkline-windows-x64.exe)
+- [macOS](https://github.com/lichspace/Inkline/releases/download/latest/inkline-macos)
+- [Linux](https://github.com/lichspace/Inkline/releases/download/latest/inkline-linux)
+
 ## Requirements
 
 - Rust 1.85 or newer
