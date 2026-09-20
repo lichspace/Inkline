@@ -1,0 +1,11 @@
+/target
+/test
+
+*.log
+*.tmp
+*.swp
+.DS_Store
+Thumbs.db
+
+.idea/
+.vscode/
