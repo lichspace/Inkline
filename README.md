@@ -16,13 +16,16 @@ editing, and clean SVG or raster export.
 
 ## Downloads
 
-The latest binaries are published to the
+The latest installers are published to the
 [latest release](https://github.com/lichspace/Inkline/releases/latest) after
 every successful `main` build.
 
-- [Windows x64](https://github.com/lichspace/Inkline/releases/download/latest/inkline-windows-x64.exe)
-- [macOS](https://github.com/lichspace/Inkline/releases/download/latest/inkline-macos)
-- [Linux](https://github.com/lichspace/Inkline/releases/download/latest/inkline-linux)
+- [Windows x64 installer](https://github.com/lichspace/Inkline/releases/download/latest/inkline-windows-x64.msi)
+- [macOS disk image](https://github.com/lichspace/Inkline/releases/download/latest/inkline-macos.dmg)
+- [Linux Debian package](https://github.com/lichspace/Inkline/releases/download/latest/inkline-linux-amd64.deb)
+
+On macOS, open the disk image and drag Inkline into `Applications`. On Linux,
+install the package with `sudo apt install ./inkline-linux-amd64.deb`.
 
 ## Requirements
 

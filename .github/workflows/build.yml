@@ -22,13 +22,19 @@ jobs:
         include:
           - os: windows-latest
             artifact: inkline-windows-x64
-            binary: target/release/inkline.exe
+            bundle_format: wxsmsi
+            installer_path: target/release/bundle/wxsmsi/bin/Release/inkline.msi
+            installer_name: inkline-windows-x64.msi
           - os: macos-latest
             artifact: inkline-macos
-            binary: target/release/inkline
+            bundle_format: dmg
+            installer_path: target/release/bundle/dmg/Inkline.dmg
+            installer_name: inkline-macos.dmg
           - os: ubuntu-latest
-            artifact: inkline-linux
-            binary: target/release/inkline
+            artifact: inkline-linux-amd64
+            bundle_format: deb
+            installer_path: target/release/bundle/deb/inkline_*.deb
+            installer_name: inkline-linux-amd64.deb
 
     steps:
       - name: Checkout
@@ -58,14 +64,29 @@ jobs:
       - name: Run tests
         run: cargo test --locked
 
-      - name: Build release binary
-        run: cargo build --release --locked
+      - name: Install cargo-bundle
+        run: cargo install cargo-bundle --version 0.11.0 --locked
+
+      - name: Set up .NET SDK
+        if: runner.os == 'Windows'
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Build installer
+        run: cargo bundle --release --format ${{ matrix.bundle_format }}
+
+      - name: Stage installer
+        shell: bash
+        run: |
+          mkdir -p dist
+          cp ${{ matrix.installer_path }} dist/${{ matrix.installer_name }}
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.artifact }}
-          path: ${{ matrix.binary }}
+          path: dist
           if-no-files-found: error
 
   release:
@@ -86,9 +107,9 @@ jobs:
       - name: Prepare release files
         run: |
           mkdir -p dist
-          cp artifacts/inkline-windows-x64/inkline.exe dist/inkline-windows-x64.exe
-          cp artifacts/inkline-macos/inkline dist/inkline-macos
-          cp artifacts/inkline-linux/inkline dist/inkline-linux
+          cp artifacts/inkline-windows-x64/inkline-windows-x64.msi dist/
+          cp artifacts/inkline-macos/inkline-macos.dmg dist/
+          cp artifacts/inkline-linux-amd64/inkline-linux-amd64.deb dist/
 
       - name: Publish latest release
         uses: ncipollo/release-action@v1
@@ -101,4 +122,4 @@ jobs:
           makeLatest: true
           allowUpdates: true
           replacesArtifacts: true
-          artifacts: "dist/inkline-windows-x64.exe,dist/inkline-macos,dist/inkline-linux"
+          artifacts: "dist/inkline-windows-x64.msi,dist/inkline-macos.dmg,dist/inkline-linux-amd64.deb"

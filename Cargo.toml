@@ -2,6 +2,11 @@
 name = "inkline"
 version = "0.1.0"
 edition = "2021"
+description = "GPU-accelerated vector drawing application"
+authors = ["Inkline contributors <inkline@users.noreply.github.com>"]
+license = "MIT"
+repository = "https://github.com/lichspace/Inkline"
+homepage = "https://github.com/lichspace/Inkline"
 
 [dependencies]
 eframe = { version = "0.35.0", default-features = false, features = [
@@ -28,3 +33,21 @@ pollster = "0.4"
 log = "0.4"
 env_logger = "0.11"
 thiserror = "2.0"
+
+[package.metadata.bundle]
+name = "Inkline"
+identifier = "io.github.lichspace.inkline"
+category = "Graphics"
+short_description = "GPU-accelerated vector drawing application"
+long_description = "Inkline is a lightweight, GPU-accelerated vector drawing application built with Rust, egui, and wgpu."
+copyright = "Copyright (c) 2026 Inkline contributors"
+deb_depends = [
+    "libgtk-3-0",
+    "libwayland-client0",
+    "libxkbcommon0",
+    "libxkbcommon-x11-0",
+    "libxcb1",
+    "libxcb-render0",
+    "libxcb-shape0",
+    "libxcb-xfixes0",
+]
