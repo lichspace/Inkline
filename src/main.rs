@@ -1,3 +1,5 @@
+#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+
 mod app;
 mod commands;
 mod geometry;
@@ -8,11 +10,15 @@ mod selection;
 fn main() -> eframe::Result {
     env_logger::init();
 
+    let icon = eframe::icon_data::from_png_bytes(include_bytes!("../assets/inkline.png"))
+        .expect("embedded app icon should be a valid PNG");
+
     let native_options = eframe::NativeOptions {
         viewport: eframe::egui::ViewportBuilder::default()
             .with_title("Inkline")
             .with_inner_size([1280.0, 820.0])
-            .with_min_inner_size([720.0, 480.0]),
+            .with_min_inner_size([720.0, 480.0])
+            .with_icon(icon),
         ..Default::default()
     };
 

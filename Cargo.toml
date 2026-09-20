@@ -1,6 +1,6 @@
 [package]
 name = "inkline"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2021"
 description = "GPU-accelerated vector drawing application"
 authors = ["Inkline contributors <inkline@users.noreply.github.com>"]
@@ -33,6 +33,7 @@ pollster = "0.4"
 log = "0.4"
 env_logger = "0.11"
 thiserror = "2.0"
+rfd = "0.17.2"
 
 [package.metadata.bundle]
 name = "Inkline"
@@ -41,6 +42,9 @@ category = "Graphics and Design"
 short_description = "GPU-accelerated vector drawing application"
 long_description = "Inkline is a lightweight, GPU-accelerated vector drawing application built with Rust, egui, and wgpu."
 copyright = "Copyright (c) 2026 Inkline contributors"
+icon = [
+    "assets/inkline.png",
+]
 deb_depends = [
     "libgtk-3-0",
     "libwayland-client0",

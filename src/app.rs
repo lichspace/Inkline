@@ -7,6 +7,7 @@ use eframe::egui;
 use egui::{Color32, Pos2, Rect, Sense, Stroke as EguiStroke};
 use flate2::write::ZlibEncoder;
 use flate2::Compression;
+use rfd::FileDialog as RfdFileDialog;
 
 use crate::commands::Command;
 use crate::geometry;
@@ -17,6 +18,7 @@ use crate::selection::{self, StrokeRef};
 const DOCUMENT_WIDTH: f32 = 1280.0;
 const DOCUMENT_HEIGHT: f32 = 800.0;
 const MAX_RECENT_PROJECTS: usize = 10;
+const APP_VERSION: &str = env!("CARGO_PKG_VERSION");
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Tool {
@@ -67,8 +69,12 @@ pub struct InklineApp {
     drawing: Option<DrawingState>,
     selection_drag: Option<SelectionDrag>,
     selected: Vec<StrokeRef>,
+    renaming_layer_id: Option<LayerId>,
+    renaming_layer_name: String,
+    rename_focus_requested: bool,
     dirty_layers: HashSet<LayerId>,
     revision: u64,
+    saved_revision: u64,
     status: String,
     file_dialog: FileDialog,
     project_path: String,
@@ -76,6 +82,8 @@ pub struct InklineApp {
     export_path: String,
     export_width: u32,
     export_height: u32,
+    close_prompt_open: bool,
+    allow_close: bool,
 }
 
 impl InklineApp {
@@ -102,8 +110,12 @@ impl InklineApp {
             drawing: None,
             selection_drag: None,
             selected: Vec::new(),
+            renaming_layer_id: None,
+            renaming_layer_name: String::new(),
+            rename_focus_requested: false,
             dirty_layers: HashSet::new(),
             revision: 0,
+            saved_revision: 0,
             status: "Ready".to_owned(),
             file_dialog: FileDialog::None,
             project_path: String::new(),
@@ -111,6 +123,8 @@ impl InklineApp {
             export_path: String::new(),
             export_width: 2560,
             export_height: 1600,
+            close_prompt_open: false,
+            allow_close: false,
         }
     }
 
@@ -150,6 +164,36 @@ impl InklineApp {
         self.dirty_layers.clear();
     }
 
+    fn finish_renaming(&mut self) {
+        if let Some(layer_id) = self.renaming_layer_id {
+            self.commit_rename(layer_id);
+        }
+    }
+
+    fn commit_rename(&mut self, layer_id: LayerId) {
+        if self.renaming_layer_id != Some(layer_id) {
+            return;
+        }
+
+        self.renaming_layer_id = None;
+        let new_name = std::mem::take(&mut self.renaming_layer_name);
+        if new_name.trim().is_empty() {
+            return;
+        }
+
+        let before = match self.document().layer(layer_id) {
+            Some(layer) => layer.clone(),
+            None => return,
+        };
+        if before.name == new_name {
+            return;
+        }
+
+        let mut after = before.clone();
+        after.name = new_name;
+        self.execute(Command::SetLayer { before, after });
+    }
+
     fn undo(&mut self) {
         let Some(command) = self.undo.pop() else {
             self.status = "Nothing to undo".to_owned();
@@ -182,17 +226,43 @@ impl InklineApp {
         self.drawing.is_some() || self.selection_drag.is_some()
     }
 
+    fn is_dirty(&self) -> bool {
+        self.revision != self.saved_revision
+    }
+
+    fn handle_close_request(&mut self, ctx: &egui::Context) {
+        let close_requested = ctx.input(|input| input.viewport().close_requested());
+        if close_requested && self.is_dirty() && !self.allow_close {
+            ctx.send_viewport_cmd(egui::ViewportCommand::CancelClose);
+            self.close_prompt_open = true;
+        }
+    }
+
+    fn update_window_title(&self, ctx: &egui::Context) {
+        let file_name = file_name_or_default(self.project_path.trim(), "Untitled");
+        let dirty = if self.is_dirty() { "*" } else { "" };
+        ctx.send_viewport_cmd(egui::ViewportCommand::Title(format!(
+            "Inkline {APP_VERSION} - {file_name}{dirty}"
+        )));
+    }
+
     fn show_menu_bar(&mut self, ui: &mut egui::Ui) {
         egui::Panel::top("menu_bar").show(ui, |ui| {
             egui::MenuBar::new().ui(ui, |ui| {
                 ui.menu_button("File", |ui| {
                     if ui.button("Save Project...").clicked() {
-                        self.file_dialog = FileDialog::SaveProject;
                         ui.close();
+                        if let Some(path) = self.choose_project_file(FileDialog::SaveProject) {
+                            self.project_path = path;
+                            self.save_project();
+                        }
                     }
-                    if ui.button("Import Project...").clicked() {
-                        self.file_dialog = FileDialog::ImportProject;
+                    if ui.button("Open Project...").clicked() {
                         ui.close();
+                        if let Some(path) = self.choose_project_file(FileDialog::ImportProject) {
+                            self.project_path = path;
+                            self.load_project();
+                        }
                     }
 
                     ui.separator();
@@ -279,7 +349,7 @@ impl InklineApp {
 
         let title = match dialog {
             FileDialog::SaveProject => "Save Project",
-            FileDialog::ImportProject => "Import Project",
+            FileDialog::ImportProject => "Open Project",
             FileDialog::ExportPng => "Export PNG",
             FileDialog::ExportJpeg => "Export JPEG",
             FileDialog::ExportSvg => "Export SVG",
@@ -322,7 +392,25 @@ impl InklineApp {
         } else {
             "Output file"
         });
-        ui.add(egui::TextEdit::singleline(path).desired_width(f32::INFINITY));
+        let mut browse = false;
+        ui.horizontal(|ui| {
+            let edit_width = (ui.available_width() - 88.0).max(80.0);
+            ui.add(egui::TextEdit::singleline(path).desired_width(edit_width));
+            if ui.button("Browse...").clicked() {
+                browse = true;
+            }
+        });
+        if browse {
+            let current_path = path.clone();
+            let starting_directory = Path::new(&current_path)
+                .parent()
+                .filter(|directory| directory.exists())
+                .map(|directory| directory.to_path_buf());
+            let selected = choose_file_dialog(dialog, &current_path, starting_directory);
+            if let Some(selected) = selected {
+                *path = selected;
+            }
+        }
         ui.add_space(6.0);
 
         if matches!(dialog, FileDialog::ExportPng | FileDialog::ExportJpeg) {
@@ -345,7 +433,7 @@ impl InklineApp {
 
         let confirm_label = match dialog {
             FileDialog::SaveProject => "Save",
-            FileDialog::ImportProject => "Import",
+            FileDialog::ImportProject => "Open",
             FileDialog::ExportPng | FileDialog::ExportJpeg | FileDialog::ExportSvg => "Export",
             FileDialog::None => "OK",
         };
@@ -379,6 +467,78 @@ impl InklineApp {
             FileDialog::ExportJpeg => self.export_raster(false),
             FileDialog::ExportSvg => self.export_svg(),
             FileDialog::None => {}
+        }
+    }
+
+    fn choose_project_file(&self, dialog: FileDialog) -> Option<String> {
+        let current_path = self.project_path.clone();
+        let starting_directory = Path::new(&current_path)
+            .parent()
+            .filter(|directory| directory.exists())
+            .map(|directory| directory.to_path_buf());
+        choose_file_dialog(dialog, &current_path, starting_directory)
+    }
+
+    fn save_project_or_choose(&mut self) {
+        if self.project_path.trim().is_empty() {
+            if let Some(path) = self.choose_project_file(FileDialog::SaveProject) {
+                self.project_path = path;
+                self.save_project();
+            }
+        } else {
+            self.save_project();
+        }
+    }
+
+    fn show_close_prompt(&mut self, ctx: &egui::Context) {
+        if !self.close_prompt_open {
+            return;
+        }
+
+        let mut open = self.close_prompt_open;
+        let mut save_requested = false;
+        let mut discard_requested = false;
+        let ctx = ctx.clone();
+
+        egui::Window::new("Unsaved Changes")
+            .open(&mut open)
+            .collapsible(false)
+            .resizable(false)
+            .anchor(egui::Align2::CENTER_CENTER, egui::Vec2::ZERO)
+            .show(&ctx, |ui| {
+                ui.label("Save changes before closing?");
+                ui.horizontal(|ui| {
+                    if ui.button("Save").clicked() {
+                        save_requested = true;
+                    }
+                    if ui.button("Discard").clicked() {
+                        discard_requested = true;
+                    }
+                });
+            });
+
+        self.close_prompt_open = open;
+
+        if save_requested {
+            if self.project_path.trim().is_empty() {
+                let Some(path) = self.choose_project_file(FileDialog::SaveProject) else {
+                    return;
+                };
+                self.project_path = path;
+            }
+
+            self.save_project();
+            if !self.is_dirty() {
+                self.close_prompt_open = false;
+                self.allow_close = true;
+                ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+            }
+        }
+
+        if discard_requested {
+            self.close_prompt_open = false;
+            self.allow_close = true;
+            ctx.send_viewport_cmd(egui::ViewportCommand::Close);
         }
     }
 
@@ -497,13 +657,18 @@ impl InklineApp {
                             let mut changed = false;
 
                             ui.horizontal(|ui| {
-                                let eye = if target.visible { "●" } else { "○" };
+                                let eye_color = if target.visible {
+                                    ui.visuals().strong_text_color()
+                                } else {
+                                    ui.visuals().weak_text_color()
+                                };
+                                let mut eye_text =
+                                    egui::RichText::new("👁").size(15.0).color(eye_color);
+                                if !target.visible {
+                                    eye_text = eye_text.strikethrough();
+                                }
                                 if ui
-                                    .add(
-                                        egui::Button::new(egui::RichText::new(eye).size(15.0))
-                                            .small()
-                                            .frame(false),
-                                    )
+                                    .add(egui::Button::new(eye_text).small().frame(false))
                                     .on_hover_text("Show/hide layer")
                                     .clicked()
                                 {
@@ -511,9 +676,43 @@ impl InklineApp {
                                     changed = true;
                                 }
 
-                                if ui.selectable_label(selected, &target.name).clicked() {
-                                    active_id = target.id;
-                                    self.selected.clear();
+                                if self.renaming_layer_id == Some(target.id) {
+                                    let request_focus = self.rename_focus_requested;
+                                    if request_focus {
+                                        self.rename_focus_requested = false;
+                                    }
+
+                                    let edit_width = (ui.available_width() - 8.0).max(80.0);
+                                    let response = ui.add(
+                                        egui::TextEdit::singleline(&mut self.renaming_layer_name)
+                                            .id(egui::Id::new(("layer_rename", target.id)))
+                                            .desired_width(edit_width),
+                                    );
+                                    if request_focus {
+                                        response.request_focus();
+                                    }
+                                    if response.lost_focus() {
+                                        self.commit_rename(target.id);
+                                    }
+                                } else {
+                                    let label = ui
+                                        .selectable_label(
+                                            selected,
+                                            egui::RichText::new(&target.name),
+                                        )
+                                        .on_hover_text("Double-click to rename");
+                                    if label.clicked() {
+                                        active_id = target.id;
+                                        self.selected.clear();
+                                    }
+                                    if label.double_clicked() {
+                                        self.finish_renaming();
+                                        self.renaming_layer_id = Some(target.id);
+                                        self.renaming_layer_name = target.name.clone();
+                                        self.rename_focus_requested = true;
+                                        active_id = target.id;
+                                        self.selected.clear();
+                                    }
                                 }
                             });
 
@@ -548,15 +747,6 @@ impl InklineApp {
 
                 ui.add_space(2.0);
                 ui.label(egui::RichText::new("Layer Properties").strong());
-
-                ui.horizontal(|ui| {
-                    ui.label("Name");
-                    let name_before = target.name.clone();
-                    ui.add(egui::TextEdit::singleline(&mut target.name).desired_width(170.0));
-                    if target.name != name_before {
-                        changed = true;
-                    }
-                });
 
                 ui.horizontal(|ui| {
                     ui.label("Opacity");
@@ -1205,6 +1395,7 @@ impl InklineApp {
         match result {
             Ok(()) => {
                 self.status = format!("Saved {path}");
+                self.saved_revision = self.revision;
                 self.remember_project(&path);
             }
             Err(error) => self.status = format!("Save failed: {error}"),
@@ -1227,6 +1418,7 @@ impl InklineApp {
                 self.selected.clear();
                 self.dirty_layers.clear();
                 self.revision = self.revision.wrapping_add(1);
+                self.saved_revision = self.revision;
                 self.status = format!("Loaded {path}");
                 self.remember_project(&path);
             }
@@ -1291,6 +1483,9 @@ impl InklineApp {
 
 impl eframe::App for InklineApp {
     fn logic(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        self.handle_close_request(ctx);
+        self.update_window_title(ctx);
+
         if self.is_interacting() {
             ctx.request_repaint();
         }
@@ -1303,16 +1498,18 @@ impl eframe::App for InklineApp {
         self.show_layer_panel(ui);
         self.show_canvas(ui);
         self.show_file_dialogs(ui.ctx());
+        self.show_close_prompt(ui.ctx());
     }
 }
 
 impl InklineApp {
     fn handle_shortcuts(&mut self, ui: &mut egui::Ui) {
-        if self.file_dialog != FileDialog::None {
+        if self.file_dialog != FileDialog::None || self.close_prompt_open {
             return;
         }
 
         let ctx = ui.ctx().clone();
+        let save = ctx.input_mut(|i| i.consume_key(egui::Modifiers::COMMAND, egui::Key::S));
         let undo = ctx.input_mut(|i| i.consume_key(egui::Modifiers::COMMAND, egui::Key::Z));
         let redo = ctx.input_mut(|i| {
             i.consume_key(
@@ -1320,6 +1517,9 @@ impl InklineApp {
                 egui::Key::Z,
             ) || i.consume_key(egui::Modifiers::COMMAND, egui::Key::Y)
         });
+        if save {
+            self.save_project_or_choose();
+        }
         if undo {
             self.undo();
         }
@@ -1423,6 +1623,57 @@ fn color_from_linear(color: [f32; 4]) -> Color32 {
         (color[2].clamp(0.0, 1.0) * 255.0) as u8,
         (color[3].clamp(0.0, 1.0) * 255.0) as u8,
     )
+}
+
+fn file_name_or_default(path: &str, default: &str) -> String {
+    Path::new(path)
+        .file_name()
+        .and_then(|name| name.to_str())
+        .filter(|name| !name.is_empty())
+        .unwrap_or(default)
+        .to_owned()
+}
+
+fn choose_file_dialog(
+    dialog: FileDialog,
+    current_path: &str,
+    starting_directory: Option<PathBuf>,
+) -> Option<String> {
+    let mut file_dialog = RfdFileDialog::new();
+    if let Some(directory) = starting_directory {
+        file_dialog = file_dialog.set_directory(directory);
+    }
+
+    let result = match dialog {
+        FileDialog::SaveProject => file_dialog
+            .set_title("Save Project")
+            .add_filter("Inkline Project", &["inkline"])
+            .set_file_name(file_name_or_default(current_path, "Inkline.inkline"))
+            .save_file(),
+        FileDialog::ImportProject => file_dialog
+            .set_title("Open Project")
+            .add_filter("Inkline Project", &["inkline"])
+            .add_filter("All files", &["*"])
+            .pick_file(),
+        FileDialog::ExportPng => file_dialog
+            .set_title("Export PNG")
+            .add_filter("PNG Image", &["png"])
+            .set_file_name(file_name_or_default(current_path, "untitled.png"))
+            .save_file(),
+        FileDialog::ExportJpeg => file_dialog
+            .set_title("Export JPEG")
+            .add_filter("JPEG Image", &["jpg", "jpeg"])
+            .set_file_name(file_name_or_default(current_path, "untitled.jpg"))
+            .save_file(),
+        FileDialog::ExportSvg => file_dialog
+            .set_title("Export SVG")
+            .add_filter("SVG Image", &["svg"])
+            .set_file_name(file_name_or_default(current_path, "untitled.svg"))
+            .save_file(),
+        FileDialog::None => return None,
+    };
+
+    result.map(|path| path.to_string_lossy().into_owned())
 }
 
 fn recent_projects_path() -> Option<PathBuf> {
