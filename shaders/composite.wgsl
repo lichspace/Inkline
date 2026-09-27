@@ -1,6 +1,9 @@
 struct CompositeUniform {
     opacity: f32,
-    _pad: vec3<f32>,
+    _pad: f32,
+    uv_min: vec2<f32>,
+    uv_max: vec2<f32>,
+    _pad2: vec2<f32>,
 };
 
 @group(0) @binding(0)
@@ -34,7 +37,7 @@ fn vs_main(@builtin(vertex_index) vertex_index: u32) -> VsOut {
 
     var out: VsOut;
     out.position = vec4<f32>(positions[vertex_index], 0.0, 1.0);
-    out.uv = uvs[vertex_index];
+    out.uv = mix(composite.uv_min, composite.uv_max, uvs[vertex_index]);
     return out;
 }
 

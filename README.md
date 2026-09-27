@@ -8,7 +8,7 @@ editing, and clean SVG or raster export.
 
 - Pressure-sensitive vector brush with GPU tessellation
 - Layer management with visibility, opacity, and blend modes
-- Brush, marquee selection, and transform tools
+- Brush and marquee selection/move tools
 - Undo and redo for document and layer operations
 - Project files with compressed binary serialization
 - SVG, PNG, and JPEG export
@@ -29,14 +29,26 @@ install the package with `sudo apt install ./inkline-linux-amd64.deb`.
 
 ## Requirements
 
-- Rust 1.85 or newer
+- Rust 1.92 or newer (the checked-in toolchain file installs the required iOS targets)
 - A GPU and drivers compatible with wgpu
+- Xcode for iPhone and iPad builds
 
 ## Run
 
 ```sh
 cargo run --release
 ```
+
+### iPhone and iPad
+
+Open `ios/Inkline.xcodeproj` in Xcode, select the `Inkline` scheme and an
+iPhone or iPad simulator, then press Run. The Xcode build phase compiles and
+links the Rust static library automatically.
+
+For a physical device, select your development team under Signing &
+Capabilities and use a unique bundle identifier before pressing Run. Inkline
+supports iOS 16 and later. Projects and exports are available in
+Files → On My iPhone/iPad → Inkline.
 
 ## Development
 

@@ -300,7 +300,7 @@ mod tests {
     }
 
     fn point_is_covered(geometry: &GpuGeometry, point: [f32; 2]) -> bool {
-        for triangle in geometry.indices.chunks_exact(3) {
+        for triangle in geometry.indices.as_chunks::<3>().0 {
             let a = geometry.vertices[triangle[0] as usize].position;
             let b = geometry.vertices[triangle[1] as usize].position;
             let c = geometry.vertices[triangle[2] as usize].position;

@@ -22,7 +22,10 @@ struct SolidUniform {
 #[derive(Clone, Copy, Debug, Pod, Zeroable)]
 struct CompositeUniform {
     opacity: f32,
-    _pad: [f32; 7],
+    _pad: f32,
+    uv_min: [f32; 2],
+    uv_max: [f32; 2],
+    _pad2: [f32; 2],
 }
 
 struct LayerGpu {
@@ -98,7 +101,7 @@ impl GpuRenderState {
                     },
                     wgpu::BindGroupLayoutEntry {
                         binding: 2,
-                        visibility: wgpu::ShaderStages::FRAGMENT,
+                        visibility: wgpu::ShaderStages::VERTEX_FRAGMENT,
                         ty: wgpu::BindingType::Buffer {
                             ty: wgpu::BufferBindingType::Uniform,
                             has_dynamic_offset: false,
@@ -260,6 +263,7 @@ impl GpuRenderState {
         document: &Document,
         dirty_layers: &HashSet<LayerId>,
         revision: u64,
+        uv_rect: [f32; 4],
         encoder: &mut wgpu::CommandEncoder,
     ) {
         let canvas_changed = (self.canvas_width - document.width).abs() > f32::EPSILON
@@ -313,7 +317,7 @@ impl GpuRenderState {
                     usage: wgpu::BufferUsages::INDEX | wgpu::BufferUsages::COPY_DST,
                     mapped_at_creation: false,
                 });
-                let opacity_buffer = create_opacity_buffer(&self.device, layer.opacity);
+                let opacity_buffer = create_opacity_buffer(&self.device, layer.opacity, uv_rect);
                 let bind_group = create_composite_bind_group(
                     &self.device,
                     &self.composite_bind_group_layout,
@@ -341,24 +345,18 @@ impl GpuRenderState {
                 || dirty_layers.contains(&layer.id);
 
             if let Some(layer_gpu) = self.layers.get_mut(&layer.id) {
-                if (layer_gpu.opacity - layer.opacity).abs() > f32::EPSILON {
-                    self.queue.write_buffer(
-                        &layer_gpu.opacity_buffer,
-                        0,
-                        bytemuck::cast_slice(&[CompositeUniform {
-                            opacity: layer.opacity,
-                            _pad: [0.0; 7],
-                        }]),
-                    );
-                    layer_gpu.bind_group = create_composite_bind_group(
-                        &self.device,
-                        &self.composite_bind_group_layout,
-                        &layer_gpu.view,
-                        &self.sampler,
-                        &layer_gpu.opacity_buffer,
-                    );
-                    layer_gpu.opacity = layer.opacity;
-                }
+                self.queue.write_buffer(
+                    &layer_gpu.opacity_buffer,
+                    0,
+                    bytemuck::cast_slice(&[CompositeUniform {
+                        opacity: layer.opacity,
+                        _pad: 0.0,
+                        uv_min: [uv_rect[0], uv_rect[1]],
+                        uv_max: [uv_rect[2], uv_rect[3]],
+                        _pad2: [0.0; 2],
+                    }]),
+                );
+                layer_gpu.opacity = layer.opacity;
 
                 if dirty {
                     update_layer_geometry(&self.device, &self.queue, layer_gpu, &layer.strokes);
@@ -429,6 +427,7 @@ pub struct CanvasCallback {
     pub render_state: Arc<Mutex<GpuRenderState>>,
     pub dirty_layers: HashSet<LayerId>,
     pub revision: u64,
+    pub uv_rect: [f32; 4],
 }
 
 impl CallbackTrait for CanvasCallback {
@@ -442,7 +441,13 @@ impl CallbackTrait for CanvasCallback {
     ) -> Vec<wgpu::CommandBuffer> {
         if let Ok(mut state) = self.render_state.lock() {
             if let Ok(document) = self.document.read() {
-                state.prepare(&document, &self.dirty_layers, self.revision, encoder);
+                state.prepare(
+                    &document,
+                    &self.dirty_layers,
+                    self.revision,
+                    self.uv_rect,
+                    encoder,
+                );
             }
         }
         Vec::new()
@@ -498,12 +503,15 @@ fn create_layer_texture(device: &wgpu::Device, width: f32, height: f32) -> wgpu:
     })
 }
 
-fn create_opacity_buffer(device: &wgpu::Device, opacity: f32) -> wgpu::Buffer {
+fn create_opacity_buffer(device: &wgpu::Device, opacity: f32, uv_rect: [f32; 4]) -> wgpu::Buffer {
     device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
         label: Some("composite uniform"),
         contents: bytemuck::cast_slice(&[CompositeUniform {
             opacity,
-            _pad: [0.0; 7],
+            _pad: 0.0,
+            uv_min: [uv_rect[0], uv_rect[1]],
+            uv_max: [uv_rect[2], uv_rect[3]],
+            _pad2: [0.0; 2],
         }]),
         usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
     })
@@ -809,7 +817,8 @@ pub fn render_document_to_rgba(
             }],
         });
 
-        let opacity_buffer = create_opacity_buffer(&state.device, layer.opacity);
+        let opacity_buffer =
+            create_opacity_buffer(&state.device, layer.opacity, [0.0, 0.0, 1.0, 1.0]);
         let composite_bind_group = create_composite_bind_group(
             &state.device,
             &state.composite_bind_group_layout,
@@ -963,6 +972,11 @@ mod tests {
     use crate::model::{Stroke, StrokePoint};
 
     #[test]
+    fn composite_uniform_matches_wgsl_layout() {
+        assert_eq!(std::mem::size_of::<CompositeUniform>(), 32);
+    }
+
+    #[test]
     #[ignore = "requires an available GPU adapter"]
     fn raster_export_smoke() {
         pollster::block_on(async {
@@ -991,7 +1005,7 @@ mod tests {
             let pixels = render_document_to_rgba(&mut state, &document, 64, 64).unwrap();
 
             assert_eq!(pixels.len(), 64 * 64 * 4);
-            assert!(pixels.chunks_exact(4).any(|pixel| pixel[3] != 0));
+            assert!(pixels.as_chunks::<4>().0.iter().any(|pixel| pixel[3] != 0));
         });
     }
 }

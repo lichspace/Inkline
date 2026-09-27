@@ -1,12 +1,16 @@
 [package]
 name = "inkline"
-version = "0.2.0"
+version = "0.3.0"
 edition = "2021"
+rust-version = "1.92"
 description = "GPU-accelerated vector drawing application"
 authors = ["Inkline contributors <inkline@users.noreply.github.com>"]
 license = "MIT"
 repository = "https://github.com/lichspace/Inkline"
 homepage = "https://github.com/lichspace/Inkline"
+
+[lib]
+crate-type = ["rlib", "staticlib"]
 
 [dependencies]
 eframe = { version = "0.35.0", default-features = false, features = [
@@ -18,6 +22,7 @@ eframe = { version = "0.35.0", default-features = false, features = [
     "web_screen_reader",
 ] }
 egui = "0.35.0"
+egui_extras = { version = "0.35.0", default-features = false, features = ["svg"] }
 egui-wgpu = "0.35.0"
 wgpu = "29.0.0"
 kurbo = "0.13.1"
@@ -33,6 +38,8 @@ pollster = "0.4"
 log = "0.4"
 env_logger = "0.11"
 thiserror = "2.0"
+
+[target.'cfg(not(target_os = "ios"))'.dependencies]
 rfd = "0.17.2"
 
 [package.metadata.bundle]
