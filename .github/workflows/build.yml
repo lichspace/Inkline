@@ -27,7 +27,7 @@ jobs:
             installer_name: inkline-windows-x64.msi
           - os: macos-latest
             artifact: inkline-macos
-            bundle_format: dmg
+            bundle_format: osx
             installer_path: target/release/bundle/dmg/Inkline.dmg
             installer_name: inkline-macos.dmg
           - os: ubuntu-latest
@@ -58,6 +58,10 @@ jobs:
         with:
           toolchain: stable
 
+      - name: Install macOS universal targets
+        if: runner.os == 'macOS'
+        run: rustup target add aarch64-apple-darwin x86_64-apple-darwin
+
       - name: Cache Rust build
         uses: Swatinem/rust-cache@v2
 
@@ -74,7 +78,31 @@ jobs:
           dotnet-version: '8.0.x'
 
       - name: Build installer
+        if: runner.os != 'macOS'
         run: cargo bundle --release --format ${{ matrix.bundle_format }}
+
+      - name: Build universal macOS app
+        if: runner.os == 'macOS'
+        run: |
+          cargo build --release --locked --target aarch64-apple-darwin
+          cargo build --release --locked --target x86_64-apple-darwin
+          mkdir -p target/release
+          lipo -create \
+            target/aarch64-apple-darwin/release/inkline \
+            target/x86_64-apple-darwin/release/inkline \
+            -output target/release/inkline
+          CARGO_BUNDLE_SKIP_BUILD=1 cargo bundle --release --format osx
+
+      - name: Sign and package macOS disk image
+        if: runner.os == 'macOS'
+        env:
+          MACOS_CERTIFICATE_BASE64: ${{ secrets.MACOS_CERTIFICATE_BASE64 }}
+          MACOS_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
+          MACOS_SIGNING_IDENTITY: ${{ secrets.MACOS_SIGNING_IDENTITY }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: bash scripts/package-macos.sh
 
       - name: Stage installer
         shell: bash

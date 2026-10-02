@@ -21,11 +21,15 @@ The latest installers are published to the
 every successful `main` build.
 
 - [Windows x64 installer](https://github.com/lichspace/Inkline/releases/download/latest/inkline-windows-x64.msi)
-- [macOS disk image](https://github.com/lichspace/Inkline/releases/download/latest/inkline-macos.dmg)
+- [macOS universal disk image](https://github.com/lichspace/Inkline/releases/download/latest/inkline-macos.dmg)
 - [Linux Debian package](https://github.com/lichspace/Inkline/releases/download/latest/inkline-linux-amd64.deb)
 
-On macOS, open the disk image and drag Inkline into `Applications`. On Linux,
-install the package with `sudo apt install ./inkline-linux-amd64.deb`.
+On macOS, open the disk image and drag Inkline into `Applications`. The disk
+image supports both Apple silicon and Intel Macs. If an unnotarized build is
+blocked, try to open Inkline once, then use **System Settings → Privacy &
+Security → Open Anyway**, or Control-click the app and choose **Open**. On
+Linux, install the package with
+`sudo apt install ./inkline-linux-amd64.deb`.
 
 ## Requirements
 
@@ -57,6 +61,21 @@ cargo fmt --all -- --check
 cargo clippy --all-targets --all-features -- -D warnings
 cargo test
 ```
+
+### macOS release signing
+
+The release workflow always signs the complete app bundle before creating the
+disk image. Without release credentials it uses an ad hoc signature, which
+keeps the bundle structurally valid but still requires the user's explicit
+Gatekeeper approval. To publish a build that opens without that warning,
+configure these GitHub Actions secrets:
+
+- `MACOS_CERTIFICATE_BASE64`: base64-encoded Developer ID Application `.p12`
+- `MACOS_CERTIFICATE_PASSWORD`: password for the `.p12`
+- `MACOS_SIGNING_IDENTITY`: certificate identity, such as
+  `Developer ID Application: Example (TEAMID)`
+- `APPLE_ID`, `APPLE_APP_SPECIFIC_PASSWORD`, and `APPLE_TEAM_ID`: credentials
+  used by Apple's notary service
 
 The main source modules are:
 
